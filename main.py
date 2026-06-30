@@ -7,7 +7,6 @@ import numpy as np
 
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_sock import Sock
-
 from ultralytics import YOLO
 import pyttsx3
 
@@ -22,18 +21,16 @@ sock = Sock(app)
 # =====================
 # YOLO
 # =====================
-MODEL_PATH = "yolov8n.pt"
-
-model = YOLO(MODEL_PATH)
+model = YOLO("yolov8n.pt")
 try:
     model.to("cuda")
-except Exception:
-    print("⚠️ CUDA not available, using CPU")
+except:
+    print("⚠️ CPU mode")
 
 model.fuse()
 
 # =====================
-# TTS (pyttsx3 – OFFLINE)
+# OFFLINE TTS (pyttsx3)
 # =====================
 tts_q = queue.Queue(maxsize=10)
 
@@ -41,19 +38,13 @@ engine = pyttsx3.init()
 engine.setProperty("rate", 145)
 engine.setProperty("volume", 1.0)
 
-voices = engine.getProperty("voices")
-engine.setProperty("voice", voices[0].id)
-
 def tts_worker():
     while True:
         text = tts_q.get()
         if text is None:
             break
-        try:
-            engine.say(text)
-            engine.runAndWait()
-        except Exception as e:
-            print("❌ TTS error:", e)
+        engine.say(text)
+        engine.runAndWait()
 
 threading.Thread(target=tts_worker, daemon=True).start()
 
@@ -64,76 +55,47 @@ threading.Thread(target=tts_worker, daemon=True).start()
 def index():
     return render_template("index.html")
 
-@app.route("/static/<path:filename>")
-def static_files(filename):
-    return send_from_directory("static", filename)
-
-# ---------------------
-# Text Simplification
-# ---------------------
 @app.route("/simplify", methods=["POST"])
 def simplify_api():
     data = request.get_json() or {}
     text = data.get("text", "")
-
     return jsonify({
         "simplified": simplify_text(text),
         "highlighted": highlight_difficult_words(text)
     })
 
-# ---------------------
-# Backend TTS endpoint
-# ---------------------
-@app.route("/tts", methods=["POST"])
-def tts_api():
-    data = request.get_json() or {}
-    text = data.get("text", "").strip()
-
-    if not text:
-        return jsonify({"ok": False})
-
-    try:
-        tts_q.put_nowait(text)
-        return jsonify({"ok": True})
-    except queue.Full:
-        return jsonify({"ok": False, "msg": "TTS queue full"}), 429
-
 # =====================
-# WEBSOCKET (Camera → YOLO → Browser)
+# WEBSOCKET – AUTO SPEAK
 # =====================
 @sock.route("/ws")
 def ws_handler(ws):
-    print("✅ WebSocket connected")
+    print("✅ WS connected")
 
     last_infer = 0
-    INFER_INTERVAL = 0.2  # ~5 FPS inference
+    last_spoken = {}   # label -> timestamp
+    SPEAK_COOLDOWN = 4  # seconds
 
     while True:
         data = ws.receive()
         if data is None:
-            print("❌ WebSocket closed")
             break
 
         try:
-            frame_bytes = base64.b64decode(data)
-            np_img = np.frombuffer(frame_bytes, np.uint8)
-            frame = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
-        except Exception:
+            frame = cv2.imdecode(
+                np.frombuffer(base64.b64decode(data), np.uint8),
+                cv2.IMREAD_COLOR
+            )
+        except:
             continue
 
         if frame is None:
             continue
 
-        now = time.time()
-        if now - last_infer < INFER_INTERVAL:
+        if time.time() - last_infer < 0.2:
             continue
-        last_infer = now
+        last_infer = time.time()
 
-        try:
-            results = model(frame, conf=0.35, verbose=False)
-        except Exception as e:
-            print("❌ YOLO error:", e)
-            continue
+        results = model(frame, conf=0.4, verbose=False)
 
         h, w = frame.shape[:2]
         center = w // 2
@@ -151,23 +113,30 @@ def ws_handler(ws):
                         "ahead"
                     )
 
-                    text = f"{label} {direction}"
+                    speak_text = f"{label} {direction}"
 
-                    cv2.rectangle(frame, (x1,y1), (x2,y2), (0,255,0), 2)
+                    # ---- SMART SPEAK ----
+                    now = time.time()
+                    if label not in last_spoken or now - last_spoken[label] > SPEAK_COOLDOWN:
+                        try:
+                            tts_q.put_nowait(speak_text)
+                            last_spoken[label] = now
+                        except queue.Full:
+                            pass
+
+                    # UI overlay
+                    cv2.rectangle(frame, (x1,y1), (x2,y2), (0,255,255), 2)
                     cv2.putText(
-                        frame, text,
-                        (x1, max(y1-10, 15)),
+                        frame, speak_text,
+                        (x1, max(20,y1-10)),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.6, (255,255,0), 2
                     )
-                except Exception:
+                except:
                     continue
 
-        try:
-            _, jpg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-            ws.send(base64.b64encode(jpg).decode("utf-8"))
-        except Exception:
-            pass
+        _, jpg = cv2.imencode(".jpg", frame)
+        ws.send(base64.b64encode(jpg).decode())
 
 # =====================
 # RUN
@@ -176,7 +145,7 @@ if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=8001,
-        debug=False,
         threaded=True,
+        debug=False,
         use_reloader=False
     )

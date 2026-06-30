@@ -1,126 +1,123 @@
-/*
 document.addEventListener("DOMContentLoaded", () => {
     const input = document.getElementById("input");
     const output = document.getElementById("output");
 
-    // Dark / Light Mode toggle
+    /* =====================
+       THEME TOGGLE
+    ===================== */
     document.getElementById("mode-toggle").onclick = () => {
-        document.body.classList.toggle("dark-mode");
         document.body.classList.toggle("light-mode");
     };
 
-    // Function to copy input content cleanly
-    function copyContentForOutput() {
-        if (!output || !input) return;
-
-        // Create temporary container to strip inline styles
+    /* =====================
+       CLEAN COPY (NO INLINE STYLES, INPUT UNTOUCHED)
+    ===================== */
+    function cleanCopy() {
         const temp = document.createElement("div");
         temp.innerHTML = input.innerHTML;
 
-        // Remove all inline font-family styles recursively
-        temp.querySelectorAll("*").forEach(el => el.removeAttribute("style"));
+        temp.querySelectorAll("*").forEach(el => {
+            el.removeAttribute("style");
+            el.removeAttribute("class");
+        });
 
         return temp.innerHTML;
     }
 
-    // Lexend font button
+    /* =====================
+       FONT BUTTONS (OUTPUT ONLY)
+    ===================== */
     document.getElementById("lexend-btn").onclick = () => {
-        output.innerHTML = copyContentForOutput(); // copy input content
-        output.style.fontFamily = "'Lexend', sans-serif"; // apply font only to output
-    };
-
-    // OpenDyslexic font button
-    document.getElementById("opendys-btn").onclick = () => {
-        output.innerHTML = copyContentForOutput(); // copy input content
-        output.style.fontFamily = "'OpenDyslexic', 'OpenDyslexicRegular', sans-serif";
-    };
-
-    // Letter spacing control
-    document.getElementById("letter-space").oninput = (e) => {
-        if (!output) return;
-        output.style.letterSpacing = e.target.value + "px";
-    };
-
-    // Line spacing control
-    document.getElementById("line-space").oninput = (e) => {
-        if (!output) return;
-        output.style.lineHeight = e.target.value;
-    };
-
-
-
-});
-*/
-
-document.addEventListener("DOMContentLoaded", () => {
-    const input = document.getElementById("input");
-    const output = document.getElementById("output");
-
-    // === Dark / Light Mode ===
-    document.getElementById("mode-toggle").onclick = () => {
-        document.body.classList.toggle("dark-mode");
-        document.body.classList.toggle("light-mode");
-    };
-
-    // === Helper: copy input content cleanly to output ===
-    function copyContentForOutput() {
-        if (!output || !input) return;
-
-        // Create temporary container to strip inline styles
-        const temp = document.createElement("div");
-        temp.innerHTML = input.innerHTML;
-
-        // Remove all inline styles to avoid overriding container font
-        temp.querySelectorAll("*").forEach(el => el.removeAttribute("style"));
-
-        return temp.innerHTML;
-    }
-
-    // === Font buttons ===
-    document.getElementById("lexend-btn").onclick = () => {
-        output.innerHTML = copyContentForOutput();
+        output.innerHTML = cleanCopy();
         output.style.fontFamily = "'Lexend', sans-serif";
     };
 
     document.getElementById("opendys-btn").onclick = () => {
-        output.innerHTML = copyContentForOutput();
-        output.style.fontFamily = "'OpenDyslexic', 'OpenDyslexicRegular', sans-serif";
+        output.innerHTML = cleanCopy();
+        output.style.fontFamily =
+          "'OpenDyslexic', 'OpenDyslexicRegular', sans-serif";
     };
 
-    // === Letter spacing & line height ===
-    document.getElementById("letter-space").oninput = (e) => {
-        if (!output) return;
+    /* =====================
+       SPACING CONTROLS (OUTPUT ONLY)
+    ===================== */
+    document.getElementById("letter-space").oninput = e =>
         output.style.letterSpacing = e.target.value + "px";
-    };
 
-    document.getElementById("line-space").oninput = (e) => {
-        if (!output) return;
+    document.getElementById("line-space").oninput = e =>
         output.style.lineHeight = e.target.value;
+
+    document.getElementById("word-space").oninput = e =>
+        output.style.wordSpacing = e.target.value + "px";
+
+    /* =====================
+       COPY OUTPUT (BULLETPROOF)
+    ===================== */
+    document.getElementById("copy-btn").onclick = () => {
+        const text = output.innerText.trim();
+        if (!text) return;
+
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+
+        ta.focus();
+        ta.select();
+        document.execCommand("copy");
+
+        document.body.removeChild(ta);
     };
 
-        // Speak highlighted text or full output
+    /* =====================
+       SIMPLIFY & HIGHLIGHT
+    ===================== */
+    async function simplifyRequest(text) {
+        const res = await fetch("/simplify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text })
+        });
+        return res.json();
+    }
+
+    document.getElementById("simplify-btn").onclick = async () => {
+        const data = await simplifyRequest(input.innerText);
+        output.innerText = data.simplified;
+    };
+
+    document.getElementById("highlight-btn").onclick = async () => {
+        const data = await simplifyRequest(input.innerText);
+        output.innerHTML = data.highlighted;
+    };
+
+    /* =====================
+       BROWSER TTS
+    ===================== */
     document.getElementById("speak-btn").onclick = () => {
-        const selection = window.getSelection();
-        let textToSpeak = "";
+        const selection = window.getSelection().toString();
+        const text = selection || output.innerText || input.innerText;
+        if (!text) return;
 
-        if (selection.rangeCount > 0) {
-            const range = selection.getRangeAt(0);
-            if (output.contains(range.commonAncestorContainer)) {
-                textToSpeak = selection.toString();
-            }
-        }
-
-        if (!textToSpeak) {
-            textToSpeak = output.innerText;
-        }
-
-        if (textToSpeak) {
-            const utterance = new SpeechSynthesisUtterance(textToSpeak);
-            utterance.rate = 1;
-            utterance.pitch = 1;
-            speechSynthesis.speak(utterance);
-        }
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.rate = 1;
+        u.pitch = 1;
+        speechSynthesis.speak(u);
     };
 
-    
+    /* =====================
+       BACKEND TTS (pyttsx3)
+    ===================== */
+    document.getElementById("backend-tts-btn").onclick = async () => {
+        const text = output.innerText || input.innerText;
+        if (!text) return;
+
+        await fetch("/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text })
+        });
+    };
 });
