@@ -34,10 +34,6 @@ model.fuse()
 # =====================
 tts_q = queue.Queue(maxsize=100)
 
-engine = pyttsx3.init()
-engine.setProperty("rate", 145)
-engine.setProperty("volume", 1.0)
-
 def queue_speech(text):
     text = (text or "").strip()
     if not text:
@@ -50,10 +46,22 @@ def queue_speech(text):
         return False
 
 def tts_worker():
+    try:
+        engine = pyttsx3.init()
+        engine.setProperty("rate", 145)
+        engine.setProperty("volume", 1.0)
+    except Exception as exc:
+        print(f"TTS init error: {exc}")
+        engine = None
+
     while True:
         text = tts_q.get()
         if text is None:
             break
+
+        if engine is None:
+            continue
+
         try:
             engine.say(text)
             engine.runAndWait()
