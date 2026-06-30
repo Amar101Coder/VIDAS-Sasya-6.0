@@ -32,7 +32,7 @@ model.fuse()
 # =====================
 # OFFLINE TTS (pyttsx3)
 # =====================
-tts_q = queue.Queue(maxsize=10)
+tts_q = queue.Queue(maxsize=100)
 
 engine = pyttsx3.init()
 engine.setProperty("rate", 145)
