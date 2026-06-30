@@ -38,13 +38,27 @@ engine = pyttsx3.init()
 engine.setProperty("rate", 145)
 engine.setProperty("volume", 1.0)
 
+def queue_speech(text):
+    text = (text or "").strip()
+    if not text:
+        return False
+
+    try:
+        tts_q.put_nowait(text)
+        return True
+    except queue.Full:
+        return False
+
 def tts_worker():
     while True:
         text = tts_q.get()
         if text is None:
             break
-        engine.say(text)
-        engine.runAndWait()
+        try:
+            engine.say(text)
+            engine.runAndWait()
+        except Exception as exc:
+            print(f"TTS error: {exc}")
 
 threading.Thread(target=tts_worker, daemon=True).start()
 
@@ -63,6 +77,19 @@ def simplify_api():
         "simplified": simplify_text(text),
         "highlighted": highlight_difficult_words(text)
     })
+
+@app.route("/tts", methods=["POST"])
+def tts_api():
+    data = request.get_json() or {}
+    text = data.get("text", "")
+
+    if not text.strip():
+        return jsonify({"ok": False, "error": "No text provided"}), 400
+
+    if not queue_speech(text):
+        return jsonify({"ok": False, "error": "Speech queue is full"}), 503
+
+    return jsonify({"ok": True})
 
 # =====================
 # WEBSOCKET – AUTO SPEAK
@@ -118,11 +145,8 @@ def ws_handler(ws):
                     # ---- SMART SPEAK ----
                     now = time.time()
                     if label not in last_spoken or now - last_spoken[label] > SPEAK_COOLDOWN:
-                        try:
-                            tts_q.put_nowait(speak_text)
+                        if queue_speech(speak_text):
                             last_spoken[label] = now
-                        except queue.Full:
-                            pass
 
                     # UI overlay
                     cv2.rectangle(frame, (x1,y1), (x2,y2), (0,255,255), 2)

@@ -1,6 +1,24 @@
 document.addEventListener("DOMContentLoaded", () => {
     const input = document.getElementById("input");
     const output = document.getElementById("output");
+    const dyslexicFont = "'OpenDyslexic', 'OpenDyslexicRegular', sans-serif";
+
+    function getReadableText() {
+        const selection = window.getSelection().toString().trim();
+        return selection || output.innerText.trim() || input.innerText.trim();
+    }
+
+    async function speakWithBackend(text) {
+        const res = await fetch("/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text })
+        });
+
+        if (!res.ok) {
+            throw new Error(await res.text());
+        }
+    }
 
     /* =====================
        THEME TOGGLE
@@ -34,8 +52,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.getElementById("opendys-btn").onclick = () => {
         output.innerHTML = cleanCopy();
-        output.style.fontFamily =
-          "'OpenDyslexic', 'OpenDyslexicRegular', sans-serif";
+        output.style.fontFamily = dyslexicFont;
     };
 
     /* =====================
@@ -51,11 +68,31 @@ document.addEventListener("DOMContentLoaded", () => {
         output.style.wordSpacing = e.target.value + "px";
 
     /* =====================
-       COPY OUTPUT (BULLETPROOF)
+       COPY OUTPUT WITH DYSLEXIC FONT
     ===================== */
-    document.getElementById("copy-btn").onclick = () => {
+    document.getElementById("copy-btn").onclick = async () => {
         const text = output.innerText.trim();
         if (!text) return;
+
+        const html = `
+            <div style="font-family: ${dyslexicFont}; letter-spacing: ${output.style.letterSpacing || "0px"}; line-height: ${output.style.lineHeight || "1.5"}; word-spacing: ${output.style.wordSpacing || "0px"}; white-space: pre-wrap;">
+                ${output.innerHTML}
+            </div>
+        `;
+
+        if (navigator.clipboard && window.ClipboardItem) {
+            try {
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        "text/html": new Blob([html], { type: "text/html" }),
+                        "text/plain": new Blob([text], { type: "text/plain" })
+                    })
+                ]);
+                return;
+            } catch (err) {
+                console.error("Rich clipboard copy failed", err);
+            }
+        }
 
         const ta = document.createElement("textarea");
         ta.value = text;
@@ -96,9 +133,13 @@ document.addEventListener("DOMContentLoaded", () => {
        BROWSER TTS
     ===================== */
     document.getElementById("speak-btn").onclick = () => {
-        const selection = window.getSelection().toString();
-        const text = selection || output.innerText || input.innerText;
+        const text = getReadableText();
         if (!text) return;
+
+        if (!("speechSynthesis" in window)) {
+            speakWithBackend(text).catch(err => console.error("Backend TTS failed", err));
+            return;
+        }
 
         speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
@@ -110,14 +151,13 @@ document.addEventListener("DOMContentLoaded", () => {
     /* =====================
        BACKEND TTS (pyttsx3)
     ===================== */
-    document.getElementById("backend-tts-btn").onclick = async () => {
-        const text = output.innerText || input.innerText;
+    const backendTtsBtn = document.getElementById("backend-tts-btn");
+    if (backendTtsBtn) {
+      backendTtsBtn.onclick = async () => {
+        const text = getReadableText();
         if (!text) return;
 
-        await fetch("/tts", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text })
-        });
-    };
+        speakWithBackend(text).catch(err => console.error("Backend TTS failed", err));
+      };
+    }
 });
