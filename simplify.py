@@ -1,5 +1,4 @@
 import re
-from html import escape
 
 
 DIFFICULT_WORDS = {
@@ -19,7 +18,7 @@ def simplify_text(text):
 
 
 def highlight_difficult_words(text):
-    highlighted = escape(text)
+    highlighted = text
     for hard, easy in DIFFICULT_WORDS.items():
         highlighted = re.sub(
             rf"\b({hard})\b",

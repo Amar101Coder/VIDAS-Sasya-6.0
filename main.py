@@ -1,7 +1,4 @@
 import base64
-import json
-import os
-import subprocess
 import time
 import threading
 import queue
@@ -10,6 +7,7 @@ import numpy as np
 
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_sock import Sock
+
 from ultralytics import YOLO
 import pyttsx3
 
@@ -24,77 +22,38 @@ sock = Sock(app)
 # =====================
 # YOLO
 # =====================
-model = YOLO("yolov8n.pt")
+MODEL_PATH = "yolov8n.pt"
+
+model = YOLO(MODEL_PATH)
 try:
     model.to("cuda")
-except:
-    print("⚠️ CPU mode")
+except Exception:
+    print("⚠️ CUDA not available, using CPU")
 
 model.fuse()
 
 # =====================
-# OFFLINE TTS (Windows speech with pyttsx3 fallback)
+# TTS (pyttsx3 – OFFLINE)
 # =====================
-tts_q = queue.Queue(maxsize=100)
+tts_q = queue.Queue(maxsize=10)
 
-def speak_with_windows(text):
-    script = """
-Add-Type -AssemblyName System.Speech
-$speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer
-$speaker.Rate = -1
-$speaker.Volume = 100
-$text = [Console]::In.ReadToEnd()
-$speaker.Speak($text)
-"""
-    timeout = max(15, min(120, len(text) // 10))
-    subprocess.run(
-        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
-        input=text,
-        text=True,
-        timeout=timeout,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=True
-    )
+engine = pyttsx3.init()
+engine.setProperty("rate", 145)
+engine.setProperty("volume", 1.0)
 
-def speak_with_pyttsx3(text):
-    engine = pyttsx3.init()
-    engine.setProperty("rate", 145)
-    engine.setProperty("volume", 1.0)
-    engine.say(text)
-    engine.runAndWait()
-
-def speak_offline(text):
-    if os.name == "nt":
-        try:
-            speak_with_windows(text)
-            return
-        except Exception as exc:
-            print(f"Windows TTS error: {exc}")
-
-    speak_with_pyttsx3(text)
-
-def queue_speech(text):
-    text = (text or "").strip()
-    if not text:
-        return False
-
-    try:
-        tts_q.put_nowait(text)
-        return True
-    except queue.Full:
-        return False
+voices = engine.getProperty("voices")
+engine.setProperty("voice", voices[0].id)
 
 def tts_worker():
     while True:
         text = tts_q.get()
         if text is None:
             break
-
         try:
-            speak_offline(text)
-        except Exception as exc:
-            print(f"TTS error: {exc}")
+            engine.say(text)
+            engine.runAndWait()
+        except Exception as e:
+            print("❌ TTS error:", e)
 
 threading.Thread(target=tts_worker, daemon=True).start()
 
@@ -105,64 +64,79 @@ threading.Thread(target=tts_worker, daemon=True).start()
 def index():
     return render_template("index.html")
 
+@app.route("/static/<path:filename>")
+def static_files(filename):
+    return send_from_directory("static", filename)
+
+# ---------------------
+# Text Simplification
+# ---------------------
 @app.route("/simplify", methods=["POST"])
 def simplify_api():
     data = request.get_json() or {}
     text = data.get("text", "")
+
     return jsonify({
         "simplified": simplify_text(text),
         "highlighted": highlight_difficult_words(text)
     })
 
+# ---------------------
+# Backend TTS endpoint
+# ---------------------
 @app.route("/tts", methods=["POST"])
 def tts_api():
     data = request.get_json() or {}
-    text = data.get("text", "")
+    text = data.get("text", "").strip()
 
-    if not text.strip():
-        return jsonify({"ok": False, "error": "No text provided"}), 400
+    if not text:
+        return jsonify({"ok": False})
 
-    if not queue_speech(text):
-        return jsonify({"ok": False, "error": "Speech queue is full"}), 503
-
-    return jsonify({"ok": True})
+    try:
+        tts_q.put_nowait(text)
+        return jsonify({"ok": True})
+    except queue.Full:
+        return jsonify({"ok": False, "msg": "TTS queue full"}), 429
 
 # =====================
-# WEBSOCKET – AUTO SPEAK
+# WEBSOCKET (Camera → YOLO → Browser)
 # =====================
 @sock.route("/ws")
 def ws_handler(ws):
-    print("✅ WS connected")
+    print("✅ WebSocket connected")
 
     last_infer = 0
-    last_spoken = {}   # label -> timestamp
-    SPEAK_COOLDOWN = 4  # seconds
+    INFER_INTERVAL = 0.2  # ~5 FPS inference
 
     while True:
         data = ws.receive()
         if data is None:
+            print("❌ WebSocket closed")
             break
 
         try:
-            frame = cv2.imdecode(
-                np.frombuffer(base64.b64decode(data), np.uint8),
-                cv2.IMREAD_COLOR
-            )
-        except:
+            frame_bytes = base64.b64decode(data)
+            np_img = np.frombuffer(frame_bytes, np.uint8)
+            frame = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
+        except Exception:
             continue
 
         if frame is None:
             continue
 
-        if time.time() - last_infer < 0.2:
+        now = time.time()
+        if now - last_infer < INFER_INTERVAL:
             continue
-        last_infer = time.time()
+        last_infer = now
 
-        results = model(frame, conf=0.4, verbose=False)
+        try:
+            results = model(frame, conf=0.35, verbose=False)
+        except Exception as e:
+            print("❌ YOLO error:", e)
+            continue
 
         h, w = frame.shape[:2]
         center = w // 2
-        speech_items = []
 
         for r in results:
             for box in r.boxes:
@@ -177,30 +151,23 @@ def ws_handler(ws):
                         "ahead"
                     )
 
-                    speak_text = f"{label} {direction}"
+                    text = f"{label} {direction}"
 
-                    # ---- SMART SPEAK ----
-                    now = time.time()
-                    if speak_text not in last_spoken or now - last_spoken[speak_text] > SPEAK_COOLDOWN:
-                        speech_items.append(speak_text)
-                        last_spoken[speak_text] = now
-
-                    # UI overlay
-                    cv2.rectangle(frame, (x1,y1), (x2,y2), (0,255,255), 2)
+                    cv2.rectangle(frame, (x1,y1), (x2,y2), (0,255,0), 2)
                     cv2.putText(
-                        frame, speak_text,
-                        (x1, max(20,y1-10)),
+                        frame, text,
+                        (x1, max(y1-10, 15)),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.6, (255,255,0), 2
                     )
-                except:
+                except Exception:
                     continue
 
-        _, jpg = cv2.imencode(".jpg", frame)
-        ws.send(json.dumps({
-            "image": base64.b64encode(jpg).decode(),
-            "speech": speech_items
-        }))
+        try:
+            _, jpg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+            ws.send(base64.b64encode(jpg).decode("utf-8"))
+        except Exception:
+            pass
 
 # =====================
 # RUN
@@ -209,7 +176,7 @@ if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=8001,
-        threaded=True,
         debug=False,
+        threaded=True,
         use_reloader=False
     )

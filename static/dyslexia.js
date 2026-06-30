@@ -1,190 +1,126 @@
+/*
 document.addEventListener("DOMContentLoaded", () => {
     const input = document.getElementById("input");
     const output = document.getElementById("output");
-    const dyslexicFont = "'OpenDyslexic', 'OpenDyslexicRegular', sans-serif";
 
-    function getReadableText() {
-        const selection = window.getSelection().toString().trim();
-        return selection || output.innerText.trim() || input.innerText.trim();
-    }
-
-    async function speakWithBackend(text) {
-        const res = await fetch("/tts", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text })
-        });
-
-        if (!res.ok) {
-            throw new Error(await res.text());
-        }
-    }
-
-    function speakInBrowser(text, options = {}) {
-        if (!("speechSynthesis" in window) || !text) {
-            return false;
-        }
-
-        if (options.interrupt !== false) {
-            speechSynthesis.cancel();
-        }
-
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = options.rate || 0.95;
-        utterance.pitch = 1;
-        utterance.volume = 1;
-
-        const voices = speechSynthesis.getVoices();
-        const englishVoice = voices.find(voice => voice.lang && voice.lang.toLowerCase().startsWith("en"));
-        if (englishVoice) {
-            utterance.voice = englishVoice;
-        }
-
-        speechSynthesis.resume();
-        speechSynthesis.speak(utterance);
-        return true;
-    }
-
-    if ("speechSynthesis" in window) {
-        speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
-        speechSynthesis.getVoices();
-    }
-
-    window.vidasSpeak = speakInBrowser;
-
-    /* =====================
-       THEME TOGGLE
-    ===================== */
+    // Dark / Light Mode toggle
     document.getElementById("mode-toggle").onclick = () => {
+        document.body.classList.toggle("dark-mode");
         document.body.classList.toggle("light-mode");
     };
 
-    /* =====================
-       CLEAN COPY (NO INLINE STYLES, INPUT UNTOUCHED)
-    ===================== */
-    function cleanCopy() {
+    // Function to copy input content cleanly
+    function copyContentForOutput() {
+        if (!output || !input) return;
+
+        // Create temporary container to strip inline styles
         const temp = document.createElement("div");
         temp.innerHTML = input.innerHTML;
 
-        temp.querySelectorAll("*").forEach(el => {
-            el.removeAttribute("style");
-            el.removeAttribute("class");
-        });
+        // Remove all inline font-family styles recursively
+        temp.querySelectorAll("*").forEach(el => el.removeAttribute("style"));
 
         return temp.innerHTML;
     }
 
-    /* =====================
-       FONT BUTTONS (OUTPUT ONLY)
-    ===================== */
+    // Lexend font button
     document.getElementById("lexend-btn").onclick = () => {
-        output.innerHTML = cleanCopy();
+        output.innerHTML = copyContentForOutput(); // copy input content
+        output.style.fontFamily = "'Lexend', sans-serif"; // apply font only to output
+    };
+
+    // OpenDyslexic font button
+    document.getElementById("opendys-btn").onclick = () => {
+        output.innerHTML = copyContentForOutput(); // copy input content
+        output.style.fontFamily = "'OpenDyslexic', 'OpenDyslexicRegular', sans-serif";
+    };
+
+    // Letter spacing control
+    document.getElementById("letter-space").oninput = (e) => {
+        if (!output) return;
+        output.style.letterSpacing = e.target.value + "px";
+    };
+
+    // Line spacing control
+    document.getElementById("line-space").oninput = (e) => {
+        if (!output) return;
+        output.style.lineHeight = e.target.value;
+    };
+
+
+
+});
+*/
+
+document.addEventListener("DOMContentLoaded", () => {
+    const input = document.getElementById("input");
+    const output = document.getElementById("output");
+
+    // === Dark / Light Mode ===
+    document.getElementById("mode-toggle").onclick = () => {
+        document.body.classList.toggle("dark-mode");
+        document.body.classList.toggle("light-mode");
+    };
+
+    // === Helper: copy input content cleanly to output ===
+    function copyContentForOutput() {
+        if (!output || !input) return;
+
+        // Create temporary container to strip inline styles
+        const temp = document.createElement("div");
+        temp.innerHTML = input.innerHTML;
+
+        // Remove all inline styles to avoid overriding container font
+        temp.querySelectorAll("*").forEach(el => el.removeAttribute("style"));
+
+        return temp.innerHTML;
+    }
+
+    // === Font buttons ===
+    document.getElementById("lexend-btn").onclick = () => {
+        output.innerHTML = copyContentForOutput();
         output.style.fontFamily = "'Lexend', sans-serif";
     };
 
     document.getElementById("opendys-btn").onclick = () => {
-        output.innerHTML = cleanCopy();
-        output.style.fontFamily = dyslexicFont;
+        output.innerHTML = copyContentForOutput();
+        output.style.fontFamily = "'OpenDyslexic', 'OpenDyslexicRegular', sans-serif";
     };
 
-    /* =====================
-       SPACING CONTROLS (OUTPUT ONLY)
-    ===================== */
-    document.getElementById("letter-space").oninput = e =>
+    // === Letter spacing & line height ===
+    document.getElementById("letter-space").oninput = (e) => {
+        if (!output) return;
         output.style.letterSpacing = e.target.value + "px";
+    };
 
-    document.getElementById("line-space").oninput = e =>
+    document.getElementById("line-space").oninput = (e) => {
+        if (!output) return;
         output.style.lineHeight = e.target.value;
+    };
 
-    document.getElementById("word-space").oninput = e =>
-        output.style.wordSpacing = e.target.value + "px";
+        // Speak highlighted text or full output
+    document.getElementById("speak-btn").onclick = () => {
+        const selection = window.getSelection();
+        let textToSpeak = "";
 
-    /* =====================
-       COPY OUTPUT WITH DYSLEXIC FONT
-    ===================== */
-    document.getElementById("copy-btn").onclick = async () => {
-        const text = output.innerText.trim();
-        if (!text) return;
-
-        const html = `
-            <div style="font-family: ${dyslexicFont}; letter-spacing: ${output.style.letterSpacing || "0px"}; line-height: ${output.style.lineHeight || "1.5"}; word-spacing: ${output.style.wordSpacing || "0px"}; white-space: pre-wrap;">
-                ${output.innerHTML}
-            </div>
-        `;
-
-        if (navigator.clipboard && window.ClipboardItem) {
-            try {
-                await navigator.clipboard.write([
-                    new ClipboardItem({
-                        "text/html": new Blob([html], { type: "text/html" }),
-                        "text/plain": new Blob([text], { type: "text/plain" })
-                    })
-                ]);
-                return;
-            } catch (err) {
-                console.error("Rich clipboard copy failed", err);
+        if (selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            if (output.contains(range.commonAncestorContainer)) {
+                textToSpeak = selection.toString();
             }
         }
 
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
+        if (!textToSpeak) {
+            textToSpeak = output.innerText;
+        }
 
-        ta.focus();
-        ta.select();
-        document.execCommand("copy");
-
-        document.body.removeChild(ta);
-    };
-
-    /* =====================
-       SIMPLIFY & HIGHLIGHT
-    ===================== */
-    async function simplifyRequest(text) {
-        const res = await fetch("/simplify", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text })
-        });
-        return res.json();
-    }
-
-    document.getElementById("simplify-btn").onclick = async () => {
-        const data = await simplifyRequest(input.innerText);
-        output.innerText = data.simplified;
-    };
-
-    document.getElementById("highlight-btn").onclick = async () => {
-        const data = await simplifyRequest(input.innerText);
-        output.innerHTML = data.highlighted;
-    };
-
-    /* =====================
-       BROWSER TTS
-    ===================== */
-    document.getElementById("speak-btn").onclick = () => {
-        const text = getReadableText();
-        if (!text) return;
-
-        if (!speakInBrowser(text)) {
-            speakWithBackend(text).catch(err => console.error("Backend TTS failed", err));
+        if (textToSpeak) {
+            const utterance = new SpeechSynthesisUtterance(textToSpeak);
+            utterance.rate = 1;
+            utterance.pitch = 1;
+            speechSynthesis.speak(utterance);
         }
     };
 
-    /* =====================
-       BACKUP TTS
-    ===================== */
-    const backendTtsBtn = document.getElementById("backend-tts-btn");
-    if (backendTtsBtn) {
-      backendTtsBtn.onclick = async () => {
-        const text = getReadableText();
-        if (!text) return;
-
-        if (!speakInBrowser(text)) {
-            speakWithBackend(text).catch(err => console.error("Backend TTS failed", err));
-        }
-      };
-    }
+    
 });
