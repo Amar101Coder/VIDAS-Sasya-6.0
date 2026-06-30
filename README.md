@@ -1,6 +1,6 @@
 # VIDAS
 ## Description
-The B2 Bombers are developing VIDAS: the Visually Impaired and Dyslexic Assistance System. We are building an AI-powered accessibility website that supports visually impaired and dyslexic users through object detection, navigation assistance, dyslexic-friendly reading tools, customizable fonts, background filters, and text-to-speech — making reading and navigation easier for everyone.  
+We have developed VIDAS: the Visually Impaired and Dyslexic Assistance System. We have built an AI-powered accessibility website that supports visually impaired and dyslexic users through object detection, navigation assistance, dyslexic-friendly reading tools, customizable fonts, background filters, and text-to-speech — making reading and navigation easier for everyone.  
 
 ## Unique Selling Point
 VIDAS is a real-time assistive AI system that converts live visual input into precise navigation and cognitive guidance using computer vision and low-latency AI reasoning.  
