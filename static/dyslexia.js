@@ -20,6 +20,38 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    function speakInBrowser(text, options = {}) {
+        if (!("speechSynthesis" in window) || !text) {
+            return false;
+        }
+
+        if (options.interrupt !== false) {
+            speechSynthesis.cancel();
+        }
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = options.rate || 0.95;
+        utterance.pitch = 1;
+        utterance.volume = 1;
+
+        const voices = speechSynthesis.getVoices();
+        const englishVoice = voices.find(voice => voice.lang && voice.lang.toLowerCase().startsWith("en"));
+        if (englishVoice) {
+            utterance.voice = englishVoice;
+        }
+
+        speechSynthesis.resume();
+        speechSynthesis.speak(utterance);
+        return true;
+    }
+
+    if ("speechSynthesis" in window) {
+        speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+        speechSynthesis.getVoices();
+    }
+
+    window.vidasSpeak = speakInBrowser;
+
     /* =====================
        THEME TOGGLE
     ===================== */
@@ -136,20 +168,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const text = getReadableText();
         if (!text) return;
 
-        if (!("speechSynthesis" in window)) {
+        if (!speakInBrowser(text)) {
             speakWithBackend(text).catch(err => console.error("Backend TTS failed", err));
-            return;
         }
-
-        speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(text);
-        u.rate = 1;
-        u.pitch = 1;
-        speechSynthesis.speak(u);
     };
 
     /* =====================
-       BACKEND TTS (pyttsx3)
+       BACKUP TTS
     ===================== */
     const backendTtsBtn = document.getElementById("backend-tts-btn");
     if (backendTtsBtn) {
@@ -157,7 +182,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const text = getReadableText();
         if (!text) return;
 
-        speakWithBackend(text).catch(err => console.error("Backend TTS failed", err));
+        if (!speakInBrowser(text)) {
+            speakWithBackend(text).catch(err => console.error("Backend TTS failed", err));
+        }
       };
     }
 });

@@ -25,6 +25,10 @@
         <video id="cam" autoplay playsinline muted></video>
         <img id="processed" alt="Processed frame">
       </div>
+      <div class="controls">
+        <button id="vision-speech-btn">Enable Camera Speech</button>
+        <span id="vision-speech-status" class="small">Camera speech off</span>
+      </div>
       <div class="small">Local FPS: <span id="fpsLocal">--</span> · YOLO FPS: <span id="fpsYolo">--</span></div>
     </section>
 
@@ -53,7 +57,7 @@
         <button id="simplify-btn">Simplify Text</button>
         <button id="highlight-btn">Highlight Hard Words</button>
         <button id="speak-btn">Speak (Browser TTS)</button>
-        <button id="backend-tts-btn">Speak (Offline TTS)</button>
+        <button id="backend-tts-btn">Speak (Backup TTS)</button>
        
       </div>
 
@@ -77,6 +81,19 @@
     const processed = document.getElementById("processed");
     const fpsLocalEl = document.getElementById("fpsLocal");
     const fpsYoloEl = document.getElementById("fpsYolo");
+    const visionSpeechBtn = document.getElementById("vision-speech-btn");
+    const visionSpeechStatus = document.getElementById("vision-speech-status");
+    let visionSpeechEnabled = false;
+
+    visionSpeechBtn.onclick = () => {
+      visionSpeechEnabled = !visionSpeechEnabled;
+      visionSpeechBtn.textContent = visionSpeechEnabled ? "Disable Camera Speech" : "Enable Camera Speech";
+      visionSpeechStatus.textContent = visionSpeechEnabled ? "Camera speech on" : "Camera speech off";
+
+      if (visionSpeechEnabled && window.vidasSpeak) {
+        window.vidasSpeak("Camera speech enabled");
+      }
+    };
 
     // get camera
     try{
@@ -136,9 +153,18 @@
     requestAnimationFrame(sendFrame);
 
     ws.onmessage = (evt) => {
-      // server sends base64 jpg string
-      const b64 = evt.data;
-      processed.src = "data:image/jpeg;base64," + b64;
+      let payload;
+      try {
+        payload = JSON.parse(evt.data);
+      } catch {
+        payload = { image: evt.data, speech: [] };
+      }
+
+      processed.src = "data:image/jpeg;base64," + payload.image;
+
+      if (visionSpeechEnabled && window.vidasSpeak && Array.isArray(payload.speech)) {
+        payload.speech.forEach(text => window.vidasSpeak(text, { interrupt: false, rate: 1 }));
+      }
 
       // update yolo fps
       const now = performance.now();

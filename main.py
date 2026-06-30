@@ -1,4 +1,7 @@
 import base64
+import json
+import os
+import subprocess
 import time
 import threading
 import queue
@@ -30,9 +33,46 @@ except:
 model.fuse()
 
 # =====================
-# OFFLINE TTS (pyttsx3)
+# OFFLINE TTS (Windows speech with pyttsx3 fallback)
 # =====================
 tts_q = queue.Queue(maxsize=100)
+
+def speak_with_windows(text):
+    script = """
+Add-Type -AssemblyName System.Speech
+$speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer
+$speaker.Rate = -1
+$speaker.Volume = 100
+$text = [Console]::In.ReadToEnd()
+$speaker.Speak($text)
+"""
+    timeout = max(15, min(120, len(text) // 10))
+    subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        input=text,
+        text=True,
+        timeout=timeout,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=True
+    )
+
+def speak_with_pyttsx3(text):
+    engine = pyttsx3.init()
+    engine.setProperty("rate", 145)
+    engine.setProperty("volume", 1.0)
+    engine.say(text)
+    engine.runAndWait()
+
+def speak_offline(text):
+    if os.name == "nt":
+        try:
+            speak_with_windows(text)
+            return
+        except Exception as exc:
+            print(f"Windows TTS error: {exc}")
+
+    speak_with_pyttsx3(text)
 
 def queue_speech(text):
     text = (text or "").strip()
@@ -46,25 +86,13 @@ def queue_speech(text):
         return False
 
 def tts_worker():
-    try:
-        engine = pyttsx3.init()
-        engine.setProperty("rate", 145)
-        engine.setProperty("volume", 1.0)
-    except Exception as exc:
-        print(f"TTS init error: {exc}")
-        engine = None
-
     while True:
         text = tts_q.get()
         if text is None:
             break
 
-        if engine is None:
-            continue
-
         try:
-            engine.say(text)
-            engine.runAndWait()
+            speak_offline(text)
         except Exception as exc:
             print(f"TTS error: {exc}")
 
@@ -134,6 +162,7 @@ def ws_handler(ws):
 
         h, w = frame.shape[:2]
         center = w // 2
+        speech_items = []
 
         for r in results:
             for box in r.boxes:
@@ -152,9 +181,9 @@ def ws_handler(ws):
 
                     # ---- SMART SPEAK ----
                     now = time.time()
-                    if label not in last_spoken or now - last_spoken[label] > SPEAK_COOLDOWN:
-                        if queue_speech(speak_text):
-                            last_spoken[label] = now
+                    if speak_text not in last_spoken or now - last_spoken[speak_text] > SPEAK_COOLDOWN:
+                        speech_items.append(speak_text)
+                        last_spoken[speak_text] = now
 
                     # UI overlay
                     cv2.rectangle(frame, (x1,y1), (x2,y2), (0,255,255), 2)
@@ -168,7 +197,10 @@ def ws_handler(ws):
                     continue
 
         _, jpg = cv2.imencode(".jpg", frame)
-        ws.send(base64.b64encode(jpg).decode())
+        ws.send(json.dumps({
+            "image": base64.b64encode(jpg).decode(),
+            "speech": speech_items
+        }))
 
 # =====================
 # RUN
