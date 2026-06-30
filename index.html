@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VIAS – YOLO</title>
+
+<style>
+body{
+  margin:0;
+  background:#050505;
+  color:#cff;
+  font-family:Segoe UI,sans-serif
+}
+h1{
+  text-align:center;
+  padding:20px;
+  color:#6ff;
+}
+.container{
+  display:flex;
+  justify-content:space-around;
+  flex-wrap:wrap;
+}
+.box{
+  width:45%;
+  min-width:360px;
+  background:#111;
+  border-radius:14px;
+  padding:15px;
+  margin:15px;
+  box-shadow:0 0 20px #0ff4
+}
+video,img{
+  width:100%;
+  border-radius:12px;
+  border:1px solid #0ff6
+}
+.fps{
+  text-align:center;
+  margin-top:8px;
+  color:#9f9
+}
+</style>
+</head>
+
+<body>
+
+<h1>VIAS – Visually Impaired Assistance System</h1>
+
+<div class="container">
+  <div class="box">
+    <h2>📸 Camera</h2>
+    <video id="cam" autoplay playsinline></video>
+    <div class="fps" id="fpsLocal">Local FPS: --</div>
+  </div>
+
+  <div class="box">
+    <h2>🤖 YOLO Output</h2>
+    <img id="processed">
+    <div class="fps" id="fpsYolo">YOLO FPS: --</div>
+  </div>
+</div>
+
+<script>
+(async ()=>{
+  const video = document.getElementById("cam");
+  const processed = document.getElementById("processed");
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video:true });
+  video.srcObject = stream;
+
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = ()=>console.log("✅ WS open");
+
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+
+  function sendFrame(){
+    if(video.videoWidth > 0 && ws.readyState === 1){
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video,0,0);
+
+      canvas.toBlob(blob=>{
+        if(!blob) return;
+        blob.arrayBuffer().then(buf=>{
+          ws.send(btoa(String.fromCharCode(...new Uint8Array(buf))));
+        });
+      },"image/jpeg",0.6);
+    }
+    requestAnimationFrame(sendFrame);
+  }
+
+  requestAnimationFrame(sendFrame);
+
+  ws.onmessage = e=>{
+    processed.src = "data:image/jpeg;base64,"+e.data;
+  };
+})();
+</script>
+
+</body>
+</html>

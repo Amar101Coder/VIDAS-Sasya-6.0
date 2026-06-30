@@ -1,0 +1,133 @@
+/* =====================
+   THEME VARIABLES
+===================== */
+
+/* DARK MODE (default) */
+body {
+  --bg: #050505;
+  --panel: #0b0f14;
+  --accent: #00fff0;
+  --accent2: #7c4dff;
+  --text: #dfffff;
+}
+
+/* LIGHT MODE */
+body.light-mode {
+  --bg: #f6f8fc;
+  --panel: #ffffff;
+  --accent: #0066ff;
+  --accent2: #8b5cf6;
+  --text: #111111;
+}
+
+/* =====================
+   BASE
+===================== */
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Lexend', sans-serif;
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+h1,
+h2 {
+  text-align: center;
+  color: var(--accent);
+}
+
+/* Neon glow ONLY in dark mode */
+body:not(.light-mode) h1,
+body:not(.light-mode) h2 {
+  text-shadow: 0 0 14px var(--accent);
+}
+
+/* =====================
+   LAYOUT
+===================== */
+.card {
+  background: var(--panel);
+  border-radius: 14px;
+  padding: 16px;
+  margin: 18px auto;
+  max-width: 900px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.25);
+}
+
+/* =====================
+   MEDIA
+===================== */
+video,
+img {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--accent);
+}
+
+body:not(.light-mode) video,
+body:not(.light-mode) img {
+  box-shadow: 0 0 12px rgba(0,255,255,0.6);
+}
+
+/* =====================
+   BUTTONS
+===================== */
+button {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 8px 14px;
+  border-radius: 8px;
+  margin: 6px;
+  cursor: pointer;
+  font-family: 'Lexend', sans-serif;
+  transition: 0.2s ease;
+}
+
+button:hover {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+/* =====================
+   TEXT BOXES
+===================== */
+.box {
+  background: transparent;
+  border: 2px solid var(--accent2);
+  border-radius: 10px;
+  padding: 12px;
+  min-height: 160px;
+  white-space: pre-wrap;
+  overflow-y: auto;
+}
+
+/* INPUT MUST NEVER CHANGE FONT */
+#input {
+  font-family: system-ui, Arial, sans-serif !important;
+}
+
+/* OUTPUT DEFAULT FONT (can be overridden by JS) */
+#output {
+  font-family: 'Lexend', sans-serif;
+}
+
+/* =====================
+   HIGHLIGHTED WORDS
+===================== */
+.highlight {
+  background: var(--accent);
+  color: #000;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: help;
+}
+
+/* =====================
+   SMALL TEXT
+===================== */
+.small {
+  font-size: 13px;
+  opacity: 0.8;
+}
