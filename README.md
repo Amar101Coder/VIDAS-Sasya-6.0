@@ -14,7 +14,8 @@ By integrating YOLO-based object detection with Groq-powered AI inference, VIDAS
 - Text-to-Speech
 
 ### Our Motto
-> From live vision to actionable guidance — powered by real-time AI.  
+> Making Technology Accessible by Design — Because inclusion is not optional.
+  
 
 ### AI usage
 - RegEx Module in python
